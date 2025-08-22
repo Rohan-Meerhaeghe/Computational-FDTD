@@ -1,181 +1,199 @@
 import numpy as np
-from scipy.special import hankel1
-from numpy.fft import fft
+from scipy.special import hankel1, jv
+from numpy.fft import fft, ifft, fftfreq, fftshift
 import matplotlib.pyplot as plt
-from scipy.integrate import quad
 
 
-def post_Afout_Pfout(
-    dx,
-    dy,
-    c,
+def source_freq(omega, A, sigma, t_0, omega_0):
+    result = np.zeros_like(omega).astype(complex)
+    result = A * np.abs(
+        np.sqrt(np.pi)
+        * sigma
+        / (2j)
+        * np.exp(-1j * t_0 * omega)
+        * (
+            np.exp(-((omega - omega_0) ** 2) * sigma**2 / 4)
+            - np.exp(-((omega + omega_0) ** 2) * sigma**2 / 4)
+        )
+    )
+    return result
+
+
+def analytical_sol(omega, r, phi, c, r_0, phi_0, sigma, t_0, omega_0, N=50):
+
+    if r <= r_0:
+        result = (
+            1
+            / (3j)
+            * source_freq(omega=omega, A=1.0, sigma=sigma, t_0=t_0, omega_0=omega_0)
+            * jv(0, omega * r / c)
+            * hankel1(0, omega * r_0 / c)
+        )
+
+        for n in range(1, N):
+            # part_sum = np.sum(np.abs(result))
+            candidate = (
+                2
+                / (3j)
+                * source_freq(omega=omega, A=1.0, sigma=sigma, t_0=t_0, omega_0=omega_0)
+                * jv(2 * n / 3, omega * r / c)
+                * hankel1(2 * n / 3, omega * r_0 / c)
+                * np.cos(2 * n / 3 * phi_0)
+                * np.cos(2 * n / 3 * phi)
+            )
+            if np.isnan(candidate).any() == False:
+                result += candidate
+            # print(n, "\t", np.sum(np.abs(result)) / part_sum - 1)
+        return result
+    else:
+        result = (
+            1
+            / (3j)
+            * source_freq(omega=omega, A=1.0, sigma=sigma, t_0=t_0, omega_0=omega_0)
+            * jv(0, omega * r / c)
+            * hankel1(0, omega * r_0 / c)
+        )
+        for n in range(1, N):
+            # part_sum = np.sum(np.abs(result))
+            candidate = (
+                2
+                / (3j)
+                * source_freq(omega=omega, A=1.0, sigma=sigma, t_0=t_0, omega_0=omega_0)
+                * jv(2 * n / 3, omega * r_0 / c)
+                * hankel1(2 * n / 3, omega * r / c)
+                * np.cos(2 * n / 3 * phi)
+                * np.cos(2 * n / 3 * phi_0)
+            )
+            if np.isnan(candidate).any() == False:
+                result += candidate
+            # print(n, "\t", np.sum(np.abs(result)) / part_sum - 1)
+        return result
+
+
+def post_processing(
     dt,
+    timesteps,
+    c,
     d,
-    x_ref,
-    x_recorder,
-    y_ref,
-    y_recorder,
+    r,
+    phi,
+    r_0,
+    phi_0,
     recorder,
-    recorder_ref,
-    n_of_samples,
-    tijdreeks,
-    fc,
+    sigma,
+    t_0,
+    omega_0,
+    source_recorder,
 ):
+    n_of_samples = timesteps.size
+    # generate frequency axes
+    fftrecorder = fft(recorder.flatten(), n_of_samples)*dt
+    fftsource = fft(source_recorder.flatten(), n_of_samples)*dt
+    freqs = fftfreq(n_of_samples, dt)
+    fftrecorder = fftshift(fftrecorder)
+    freqs = fftshift(freqs)
+    fftsource = fftshift(fftsource)
+    omegas = 2 * np.pi * freqs
 
-    # generatie frequentie-as - generate frequency axes
-    maxf = 1 / dt
-
-    df = maxf / n_of_samples
-
-    fas = np.zeros((n_of_samples))
-
-    for loper in range(0, n_of_samples):
-        fas[loper] = df * loper
-
-    fas[0] = 0.00001  # avoiding phase problem at k=0 in analytical solution
-
-    # amplitudeverhouding en faseverhouding analytisch - analytical amplitude
-    # ratio and phase difference
-    r_1 = np.sqrt(x_recorder**2 + y_recorder**2)
-    phi_1 = np.arctan(y_recorder / x_recorder)
-    if phi_1 < 0:
-        phi_1 = phi_1 + 2 * np.pi
-
-    r_2 = np.sqrt(x_ref**2 + y_ref**2)
-    phi_2 = np.arctan(y_ref / x_ref)
-    if phi_2 < 0:
-        phi_2 = phi_2 + 2 * np.pi
-
-    aantalcellengepropageerd = np.sqrt(
-        (x_recorder - x_ref) ** 2 + (y_recorder - y_ref) ** 2
-    )
-
-    phi_0 = np.pi / 4
-    alpha = 3 * np.pi / 4
-    r_0 = np.sqrt(2) * d
-    n = alpha / np.pi
-    k = 2 * np.pi * fas / c
-
-    def R(eta, rho):
-        return np.sqrt(rho**2 + r_0**2 + 2 * rho * r_0 * np.cos(eta))
-
-    def myquad(integrandum, a, b):
-        return quad(integrandum, a, b)
-
-    vector_quad = np.vectorize(myquad, excluded=["a", "b"])
-
-    def V_d(beta, rho):
-        integrandum = lambda t, beta, rho: (
-            hankel1(0, k * R(1j * t, rho))
-            * np.sin(beta / n)
-            / (np.cosh(t / n) - np.cos(beta / n))
-        )
-        intfun = lambda beta, rho: quad(integrandum, 0, np.inf, args=(beta, rho))[0]
-        vec_int = np.vectorize(intfun)
-        return 1 / (2 * np.pi * n) * vec_int(beta, rho)
-
-    def u_d(rho, phi):
-        return (
-            V_d(-np.pi - phi + phi_0, rho)
-            - V_d(np.pi - phi + phi_0, rho)
-            - V_d(-np.pi - phi - phi_0, rho)
-            + V_d(np.pi - phi - phi_0, rho)
+    relevant_omegas = np.linspace(0.1 * c / d, 4 * c / d, 50)
+    analytical = np.zeros_like(relevant_omegas).astype(complex)
+    
+    for i in range(len(analytical)):
+        analytical[i] = analytical_sol(
+            omega=relevant_omegas[i],
+            r=r,
+            phi=phi,
+            c=c,
+            r_0=r_0,
+            phi_0=phi_0,
+            sigma=sigma,
+            t_0=t_0,
+            omega_0=omega_0,
         )
 
-    def distance_to_source(rho, phi):
-        return np.sqrt(r_0**2 + rho**2 - 2 * r_0 * rho * np.cos(phi_0 - phi))
+    open_space_rec = 1j * np.pi * hankel1(0, r * omegas / c)
+    open_space_theo = 1j * np.pi * hankel1(0, r * relevant_omegas / c)
 
-    def u_GO(rho, phi):
-        return np.heaviside(np.pi + phi_0 - phi) * hankel1(
-            k * distance_to_source(rho, phi)
-        )
+    plt.plot(omegas, np.abs(fftsource), color="magenta", label="Source")
+    plt.plot(relevant_omegas,source_freq(relevant_omegas,1,sigma,t_0,omega_0), color='cyan',label='Analytical')
+    plt.legend()
+    plt.xlabel(r"$\omega$ [Hz]")
+    plt.ylabel(r"$|S(\omega)|$")
+    plt.xlim(0.1 * c / d, 4 * c / d)
+    plt.show()
 
-    def u_t(rho, phi):
-        return u_d(rho, phi) + u_GO(rho, phi)
+    # analytical amplitude ratio and phase difference
 
-    Averhouding_theorie = np.abs(u_t(r_1, phi_1) / u_t(r_2, phi_2))
+    Averhouding_theorie = np.abs(analytical) / np.abs(open_space_theo)
 
-    Pverschil_theorie = np.unwrap(np.angle(1j * np.pi * u_t(r_1, phi_1))) - np.unwrap(
-        np.angle(1j * np.pi * u_t(r_2, phi_2))
+    Pverschil_theorie = np.unwrap(np.angle(analytical)) - np.unwrap(
+        np.angle(open_space_theo)
     )
 
-    # amplitudeverhouding en faseverhouding FDTD - amplitude ratio and phase
-    # difference from FDTD
-    print(recorder.shape)
-    fftrecorder = fft(recorder.flatten(), n_of_samples)
-    print(fftrecorder.shape)
-    fftrecorder_ref = fft(recorder_ref.flatten(), n_of_samples)
+    # amplitude ratio and phase difference from FDTD
+    Averhouding_FDTD = np.abs(fftrecorder / open_space_rec)
 
-    Averhouding_FDTD = np.abs(fftrecorder_ref / fftrecorder)
-
-    Pverschil_FDTD = np.unwrap(np.angle(fftrecorder_ref)) - np.unwrap(
-        np.angle(fftrecorder)
+    Pverschil_FDTD = np.unwrap(np.angle(fftrecorder)) - np.unwrap(
+        np.angle(open_space_rec)
     )
+    omega_min = 0.1 * c / d
+    omega_max = 4 * c / d
 
     plt.subplots()
-    plt.subplot(2, 3, 1)
-    plt.plot(tijdreeks, recorder)
-    plt.title("t recorder")
-    plt.subplot(2, 3, 2)
-    plt.plot(fas, np.abs(fftrecorder))
-    plt.title("fft recorder abs")
-    plt.xlim([0.05 * fc, 2 * fc])
-
-    plt.subplot(2, 3, 3)
-    plt.plot(fas, np.unwrap(np.angle(fftrecorder)))
-    plt.title("fft recorder phase")
-    plt.xlim([0.05 * fc, 2 * fc])
-    plt.ylim([-50, 0.0])
-
-    plt.subplot(2, 3, 4)
-    plt.plot(tijdreeks, recorder_ref)
-    plt.title("t recorder ref")
-    plt.subplot(2, 3, 5)
-    plt.plot(fas, np.abs(fftrecorder_ref))
-    plt.title("fft recorder ref abs")
-    plt.xlim([0.05 * fc, 2 * fc])
-
-    plt.subplot(2, 3, 6)
-    plt.plot(fas, np.unwrap(np.angle(fftrecorder_ref)))
-    plt.title("fft recorder phase")
-    plt.xlim([0.05 * fc, 2 * fc])
-    plt.ylim([-50, 0.0])
-
-    # vergelijking analytisch-FDTD - comparison analytical versus FDTD
-    lambdaoverdx = (c / fas) / dx
-
-    Averhoudingrel = Averhouding_FDTD / Averhouding_theorie.flatten()
-
-    Averhouding = 1 + ((Averhoudingrel - 1) / aantalcellengepropageerd)
-
+    plt.subplot(1, 3, 1)
+    plt.plot(timesteps, recorder, color="blue")
+    plt.title("Time recorder")
+    plt.subplot(1, 3, 2)
+    plt.plot(omegas, np.abs(fftrecorder), color="blue", label="FDTD")
+    plt.plot(relevant_omegas, np.abs(analytical), color="orange", label="Analytical")
+    plt.xlim(omega_min, omega_max)
+    plt.xlabel(r"$\omega$ [Hz]")
+    plt.ylabel("Amplitude FFT")
+    plt.legend()
+    plt.title("Amplitude")
+    plt.subplot(1, 3, 3)
+    plt.plot(omegas, np.unwrap(np.angle(fftrecorder)), color="blue", label="FDTD")
+    plt.plot(
+        relevant_omegas,
+        np.unwrap(np.angle(analytical)),
+        color="orange",
+        label="Analytical",
+    )
+    plt.xlim(omega_min, omega_max)
+    plt.xlabel(r"$\omega$ [Hz]")
+    plt.ylabel("Phase [radians]")
+    plt.legend()
+    plt.title("Phase FFT")
+    plt.savefig("p_field.png")
     plt.show()
     plt.close()
+
+    # vergelijking analytisch-FDTD - comparison analytical versus FDTD
+
+    Averhouding = Averhouding_FDTD / Averhouding_theorie
+
     print("Averhouding_FDTD")
     print(Averhouding_FDTD.shape)
     print("Averhouding_theorie")
     print(Averhouding_theorie.shape)
-    print("lambdaoverdx")
-    print(lambdaoverdx.shape)
+    print("omegas")
+    print(omegas.shape)
     print("Averhouding")
     print(Averhouding.shape)
     plt.subplots()
     plt.subplot(2, 1, 1)
-    plt.plot(lambdaoverdx, Averhouding)
-
-    plt.xlim([5, 20])
-    plt.title("Amplitude ratio FDTD/analyt. per cel")
+    plt.plot(omegas, Averhouding)
+    plt.title("Amplitude ratio FDTD/analyt")
     plt.ylabel("ratio")
-    plt.xlabel("number of cells per wavelength")
-    plt.ylim([0.99, 1.01])
+    plt.xlabel(r"$\omega$")
 
     # Pdifference = np.unwrap((Pverschil_FDTD+Pverschil_theorie)/aantalcellengepropageerd)
-    Pdifference = (Pverschil_FDTD + Pverschil_theorie) / aantalcellengepropageerd
+    Pdifference = Pverschil_FDTD - Pverschil_theorie
 
     plt.subplot(2, 1, 2)
-    plt.plot(lambdaoverdx, Pdifference)
-    plt.xlim([5, 20])
-    plt.title("Phase difference FDTD - analyt. per cel")
-    plt.ylabel("Difference")
-    plt.xlabel("number of cells per wavelength")
-    plt.ylim([-0.03, 0.03])
-    plt.show()
+    plt.plot(omegas, Pdifference)
+    plt.title("Phase difference FDTD")
+    plt.ylabel("Phase difference")
+    plt.xlabel(r"$\omega$")
+    # plt.show()
+    plt.close()

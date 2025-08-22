@@ -1,13 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from tools_old import post_processing
-from tools import post_Afout_Pfout
+from tools import post_processing
 
 from matplotlib.animation import ArtistAnimation
 
 
-def source(t, A, fc, t0, sigma):
-    return A * np.sin(2 * np.pi * fc * (t - t0)) * np.exp(-((t - t0) ** 2 / sigma))
+def source(t, A, omega_0, t_0, sigma):
+    return A * np.sin(omega_0 * (t - t_0)) * np.exp(-((t - t_0) ** 2 / sigma**2))
 
 
 def kappa(d, d_PML, kappa_max, m=4):
@@ -17,13 +16,13 @@ def kappa(d, d_PML, kappa_max, m=4):
 def FDTD(
     c=343.0,
     d=5.0,
-    CFL=1.0,
-    T=0.15,
-    n_d=200,
+    CFL=0.95,
+    T=0.20,
+    n_d=50,
     n_PML=30,
     A=1.0,
-    t0=4.5e-2,
-    sigma=1/50,
+    t_0=4.5e-2,
+    sigma=1 / 50,
     kappa_max_factor=0.254,
     plot_kappa=False,
     show_plots=False,
@@ -34,7 +33,7 @@ def FDTD(
     # INITIALISATION 2D-GRID AND SIMULATION PARAMETERS-------------------------
     n_edge = n_PML + int(3 / 2 * n_d)
     dx = d / n_d
-    dy = d / n_d
+    dy = dx
     dt = CFL / (c * np.sqrt((1 / dx**2) + (1 / dy**2)))  # time step
     n_t = int(T / dt)
     Z_r = c
@@ -43,7 +42,7 @@ def FDTD(
     if reactive_wedge == True:
         Z_0 = 2 * c
         Z_1 = 1
-    fc = c / (np.pi * d)
+    omega_0 = 2 * c / d
 
     # location of source and receivers
     x_source = int(n_PML + n_d / 2)
@@ -78,13 +77,13 @@ def FDTD(
         kappa_px[:, i] = np.full(
             height, kappa(d=(n_PML - i) * dx, kappa_max=kappa_max, d_PML=dx * n_PML)
         )
-        kappa_px[:, -i] = np.full(
+        kappa_px[:, -(i + 1)] = np.full(
             height, kappa(d=(n_PML - i) * dx, kappa_max=kappa_max, d_PML=dx * n_PML)
         )
         kappa_py[i] = np.full(
             length, kappa(d=(n_PML - i) * dx, kappa_max=kappa_max, d_PML=dx * n_PML)
         )
-        kappa_py[-i] = np.full(
+        kappa_py[-(i + 1)] = np.full(
             length, kappa(d=(n_PML - i) * dx, kappa_max=kappa_max, d_PML=dx * n_PML)
         )
     kappa_ox[:, :n_PML] = kappa_px[:, :n_PML]
@@ -142,16 +141,15 @@ def FDTD(
 
     # initialisation time series receivers
     recorder_1 = np.zeros((n_t, 1))
-    recorder_1_ref = np.zeros_like(recorder_1)
+
     recorder_2 = np.zeros_like(recorder_1)
-    recorder_2_ref = np.zeros_like(recorder_2)
+
     recorder_3 = np.zeros_like(recorder_1)
-    recorder_3_ref = np.zeros_like(recorder_3)
+
     source_recorder = np.zeros_like(recorder_1)
-    source_recorder_ref = np.zeros_like(source_recorder)
 
     timesteps = np.linspace(0, n_t * dt, n_t)
-    source_vals = source(timesteps, A=A, fc=fc, t0=t0, sigma=sigma)
+    source_vals = source(timesteps, A=A, omega_0=omega_0, t_0=t_0, sigma=sigma)
     update_source_vals = np.append(source_vals, 0.0)
 
     # TIME ITTERATION----------------------------------------------------
@@ -159,14 +157,15 @@ def FDTD(
     plt.axis("equal")
     movie = []
     for i in range(0, n_t):
-        t = (i - 1) * dt
-        timesteps[i] = t
         print("%d/%d" % (i + 1, n_t), end="\r")
 
         # propagate over one time step
 
         # adding source term to propagation
-        px[y_source, x_source] += source_vals[i]
+        p[y_source, x_source] += source_vals[i] / 2
+        
+        
+
         # lower side
         px[:n_edge, :n_edge] = (
             dt
@@ -287,13 +286,9 @@ def FDTD(
 
         # store p field at receiver locations
         recorder_1[i] = p[y_recorder_1, x_recorder_1]
-        recorder_1_ref[i] = p[y_recorder_1 + 1, x_recorder_1 + 1]
         recorder_2[i] = p[y_recorder_2, x_recorder_2]
-        recorder_2_ref[i] = p[y_recorder_2 + 1, x_recorder_2 + 1]
         recorder_3[i] = p[y_recorder_3, x_recorder_3]
-        recorder_3_ref[i] = p[y_recorder_3 + 1, x_recorder_3 + 1]
         source_recorder[i] = p[y_source, x_source]
-        source_recorder_ref[i] = p[y_source + 1, x_source + 1]
         # presenting the p field
         plot_factor_A = 0.001 * A
         if make_movie == True:
@@ -355,7 +350,7 @@ def FDTD(
     plt.close()
     plt.plot(
         timesteps,
-        source(t=timesteps, A=A, fc=fc, t0=t0, sigma=sigma),
+        source(t=timesteps, A=A, omega_0=omega_0, t_0=t_0, sigma=sigma),
         "b-",
         label="Original source",
     )
@@ -367,31 +362,30 @@ def FDTD(
     if show_plots == True:
         plt.show()
     plt.close()
-    n_of_samples = 8192
-
-    post_Afout_Pfout(dx,dy,c,dt,d,(x_recorder_1+1)*dx,x_recorder_1*dx,(y_recorder_1+1)*dy,y_recorder_1*dy,recorder_1,recorder_1_ref,n_of_samples,timesteps,fc)
     if execute_post_processing == True:
-        
+
+        # NAVERWERKING : BEREKENING FASEFOUT en AMPLITUDEFOUT---------------------------------
+        # POST PROCESSING : CALCULATE PHASE and AMPLITUDE ERROR-------------------------------
+
         post_processing(
-            dx,
-            dy,
-            c,
-            dt,
-            source_recorder,
-            source_recorder_ref,
-            n_of_samples,
-            timesteps,
-            fc,
+            dt=dt,
+            timesteps=timesteps,
+            c=c,
+            d=d,
+            r=d / 2,
+            phi=np.pi / 2,
+            r_0=np.sqrt(2) * d,
+            phi_0=5 * np.pi / 4,
+            recorder=recorder_1,
+            sigma=sigma,
+            t_0=t_0,
+            omega_0=omega_0,
+            source_recorder=source_recorder,
         )
-        post_processing(
-            dx, dy, c, dt, recorder_1, recorder_1_ref, n_of_samples, timesteps, fc
-        )
-        post_processing(
-            dx, dy, c, dt, recorder_2, recorder_2_ref, n_of_samples, timesteps, fc
-        )
-        post_processing(
-            dx, dy, c, dt, recorder_3, recorder_3_ref, n_of_samples, timesteps, fc
-        )
+
+        # post_processing(timesteps,c,d,d/2,np.pi/2,np.sqrt(2)*d,5*np.pi/4,recorder_1,sigma,t_0,omega_0)
+        # post_processing(dx,dy,timesteps,c,dt,dt,np.sqrt(5)*d/2,np.arctan(1/2),np.sqrt(2)*d,5*np.pi/4,recorder_2,sigma,t_0,omega_0)
+        # post_processing(dx,dy,timesteps,c,dt,dt,np.sqrt(17)*d/2,np.arctan(1/4),np.sqrt(2)*d,5*np.pi/4,recorder_3,sigma,t_0,omega_0)
 
     return_array = np.zeros_like(p)
     return_array[n_PML:n_edge, n_PML:n_edge] = p[n_PML:n_edge, n_PML:n_edge]
@@ -399,44 +393,4 @@ def FDTD(
     return np.abs(return_array) * dx**2
 
 
-"""
-    # NAVERWERKING : BEREKENING FASEFOUT en AMPLITUDEFOUT---------------------------------
-    # POST PROCESSING : CALCULATE PHASE and AMPLITUDE ERROR-------------------------------
-    n_of_samples = 8192
-
-    post_Afout_Pfout(
-        dx,
-        dy,
-        c,
-        dt,
-        x_ref,
-        x_recorder,
-        y_ref,
-        y_recorder,
-        x_source,
-        y_source,
-        recorder,
-        recorder_ref,
-        n_of_samples,
-        tijdreeks,
-        fc,
-    )
-    post_Afout_Pfout(
-        dx,
-        dy,
-        c,
-        dt,
-        x_ref2,
-        x_recorder2,
-        y_ref2,
-        y_recorder2,
-        x_source,
-        y_source,
-        recorder2,
-        recorder2_ref,
-        n_of_samples,
-        tijdreeks,
-        fc,
-    )
-"""
-FDTD(show_plots=True,make_movie=True)
+FDTD(show_plots=False, make_movie=True, execute_post_processing=True)

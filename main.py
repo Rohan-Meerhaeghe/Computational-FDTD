@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from tools import post_processing
+from tools_reactive import post_processing as reactive_post
 
 from matplotlib.animation import ArtistAnimation
 
@@ -345,7 +346,7 @@ def FDTD(
 
         # NAVERWERKING : BEREKENING FASEFOUT en AMPLITUDEFOUT---------------------------------
         # POST PROCESSING : CALCULATE PHASE and AMPLITUDE ERROR-------------------------------
-
+        
         post_processing(
             dt=dt,
             timesteps=timesteps,

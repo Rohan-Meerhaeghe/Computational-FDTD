@@ -362,56 +362,8 @@ def FDTD(
         # NAVERWERKING : BEREKENING FASEFOUT en AMPLITUDEFOUT---------------------------------
         # POST PROCESSING : CALCULATE PHASE and AMPLITUDE ERROR-------------------------------
 
-        post_processing(
-            dt=dt,
-            timesteps=timesteps,
-            c=c,
-            d=d,
-            r=d / 2,
-            phi=np.pi / 2,
-            r_0=np.sqrt(2) * d,
-            phi_0=5 * np.pi / 4,
-            recorder=recorder_1,
-            sigma=sigma,
-            t_0=t_0,
-            omega_0=omega_0,
-            string="recorder_1"
-        )
-        post_processing(
-            dt=dt,
-            timesteps=timesteps,
-            c=c,
-            d=d,
-            r=np.sqrt(5)*d / 2,
-            phi=np.arctan(1/2),
-            r_0=np.sqrt(2) * d,
-            phi_0=5 * np.pi / 4,
-            recorder=recorder_2,
-            sigma=sigma,
-            t_0=t_0,
-            omega_0=omega_0,
-            string="recorder_2"
-        )
-        post_processing(
-            dt=dt,
-            timesteps=timesteps,
-            c=c,
-            d=d,
-            r=np.sqrt(17)*d / 2,
-            phi=np.arctan(1/4),
-            r_0=np.sqrt(2) * d,
-            phi_0=5 * np.pi / 4,
-            recorder=recorder_3,
-            sigma=sigma,
-            t_0=t_0,
-            omega_0=omega_0,
-            string="recorder_3"
-        )
+        post_processing(dt=dt,timesteps=timesteps,c=c,d=d,recorder1=recorder_1,recorder2=recorder_2,recorder3=recorder_3,comparison="main.npz",name="reactive")
 
-    return_array = np.zeros_like(p)
-    return_array[n_PML:n_edge, n_PML:n_edge] = p[n_PML:n_edge, n_PML:n_edge]
-    return_array[n_edge:-n_PML, n_PML:-n_PML] = p[n_edge:-n_PML, n_PML:-n_PML]
-    return np.abs(return_array) * dx**2
 
 
 FDTD(show_plots=False, make_movie=False, execute_post_processing=True)

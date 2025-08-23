@@ -24,21 +24,21 @@ def post_processing(
     timesteps,
     c,
     d,
-    r,
-    phi,
-    r_0,
-    phi_0,
-    recorder,
-    sigma,
-    t_0,
-    omega_0,
-    string,
+    recorder1,
+    recorder2,
+    recorder3,
+    comparison,
+    name,
 ):
     n_of_samples = timesteps.size * 10
     # generate frequency axes
-    fftrecorder = fft(recorder.flatten(), n_of_samples) * dt
+    fftrecorder1 = fft(recorder1.flatten(), n_of_samples) * dt
+    fftrecorder2 = fft(recorder2.flatten(), n_of_samples) * dt
+    fftrecorder3 = fft(recorder3.flatten(), n_of_samples) * dt
     freqs = fftfreq(n_of_samples, dt)
-    fftrecorder = fftshift(fftrecorder)
+    fftrecorder1 = fftshift(fftrecorder1)
+    fftrecorder2 = fftshift(fftrecorder2)
+    fftrecorder3 = fftshift(fftrecorder3)
     freqs = fftshift(freqs)
     omegas = 2 * np.pi * freqs
 
@@ -49,33 +49,60 @@ def post_processing(
 
     # Clip out useful part
     omegas_band = omegas[mask]
-    fftrecorder_band = fftrecorder[mask]
-    np.savez("main_reactive_" + str(string) + ".npz", arr1=omegas_band, arr2=fftrecorder_band,arr3=timesteps,arr4=recorder)
+    fftrecorder1_band = fftrecorder1[mask]
+    fftrecorder2_band = fftrecorder2[mask]
+    fftrecorder3_band = fftrecorder3[mask]
+    np.savez(
+        "main_" + str(name) + ".npz",
+        arr1=omegas_band,
+        arr2=fftrecorder1_band,
+        arr3=fftrecorder2_band,
+        arr4=fftrecorder3_band,
+        arr5=timesteps,
+        arr6=recorder1,
+        arr7=recorder2,
+        arr8=recorder3,
+    )
 
-    data = np.load("main_" + string + ".npz")
+    data = np.load(comparison)
     omegas_orig = data["arr1"]
-    fft_recorder_orig = data["arr2"]
-    timesteps_orig = data["arr3"]
-    recorder_orig = data["arr4"]
+    fft_recorder1_orig = data["arr2"]
+    fft_recorder2_orig = data["arr3"]
+    fft_recorder3_orig = data["arr4"]
+    timesteps_orig = data["arr5"]
+    recorder1_orig = data["arr6"]
+    recorder2_orig = data["arr7"]
+    recorder3_orig = data["arr8"]
 
     plt.subplots(constrained_layout=True)
     plt.subplot(1, 3, 1)
-    plt.plot(timesteps, recorder, label="reactive")
-    plt.plot(timesteps_orig, recorder_orig, label="perfectly reflecting")
-    plt.title("Time recorder")
+    plt.plot(timesteps, recorder1, label="Recorder 1")
+    plt.plot(timesteps, recorder2, label="Recorder 2")
+    plt.plot(timesteps, recorder3, label="Recorder 3")
+    plt.title("Ratio time recorder")
     plt.legend()
     plt.subplot(1, 3, 2)
-    plt.plot(omegas_band, np.abs(fftrecorder_band)/np.abs(fft_recorder_orig))
+    plt.plot(omegas_band, np.abs(fftrecorder1_band) / np.abs(fft_recorder1_orig))
+    plt.plot(omegas_band, np.abs(fftrecorder2_band) / np.abs(fft_recorder2_orig))
+    plt.plot(omegas_band, np.abs(fftrecorder3_band) / np.abs(fft_recorder3_orig))
     plt.xlim(omega_min, omega_max)
     plt.xlabel(r"$\omega$ [Hz]")
     plt.ylabel("Amplitude ratio")
     plt.title("Amplitude ratio")
     plt.subplot(1, 3, 3)
-    plt.plot(omegas_band, np.unwrap(np.angle(fftrecorder_band)-np.angle(fft_recorder_orig)))
+    plt.plot(
+        omegas_band, np.unwrap(np.angle(fftrecorder1_band) - np.angle(fft_recorder1_orig))
+    )
+    plt.plot(
+        omegas_band, np.unwrap(np.angle(fftrecorder2_band) - np.angle(fft_recorder2_orig))
+    )
+    plt.plot(
+        omegas_band, np.unwrap(np.angle(fftrecorder3_band) - np.angle(fft_recorder3_orig))
+    )
     plt.xlim(omega_min, omega_max)
     plt.xlabel(r"$\omega$ [Hz]")
     plt.ylabel("Phase [radians]")
-    plt.title("Phase shift")
-    plt.savefig("FFT_reactive_" + string + ".png")
-    # plt.show()
+    plt.title("Phase difference")
+    plt.savefig("FFT_" + name + ".png")
+    plt.show()
     plt.close()

@@ -1,13 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from tools_old import post_processing
-from tools import post_Afout_Pfout
+from tools_reactive import post_processing
 
 from matplotlib.animation import ArtistAnimation
 
 
-def source(t, A, fc, t0, sigma):
-    return A * np.sin(2 * np.pi * fc * (t - t0)) * np.exp(-((t - t0) ** 2 / sigma))
+def source(t, A, omega_0, t_0, sigma):
+    return A * np.sin(omega_0 * (t - t_0)) * np.exp(-((t - t_0) ** 2 / sigma**2))
 
 
 def kappa(d, d_PML, kappa_max, m=4):
@@ -15,58 +14,99 @@ def kappa(d, d_PML, kappa_max, m=4):
 
 
 def FDTD(
-    theta = np.pi/6,
+    theta=np.pi / 6,
     c=343.0,
     d=5.0,
-    CFL=1.0,
-    T=0.15,
-    n_d=200,
+    CFL=0.95,
+    T=0.20,
+    n_d=50,
     n_PML=30,
     A=1.0,
-    t0=4.5e-2,
-    sigma=5e-4,
+    t_0=4.5e-2,
+    sigma=1 / 50,
     kappa_max_factor=0.254,
     plot_kappa=False,
     show_plots=False,
     make_movie=False,
-    reactive_wedge=False,
     execute_post_processing=False,
 ):
     # INITIALISATION 2D-GRID AND SIMULATION PARAMETERS-------------------------
-    n_edge = n_PML + int(3 / 2 * n_d)
+    x_edge = n_PML + int(3 / 2 * n_d)
+    y_edge = n_PML + int(3 / 2 * n_d)
     dx = d / n_d
-    dy = d / n_d
+    dy = dx
     dt = CFL / (c * np.sqrt((1 / dx**2) + (1 / dy**2)))  # time step
     n_t = int(T / dt)
     Z_r = c
-    Z_0 = 0
-    Z_1 = 0
-    if reactive_wedge == True:
-        Z_0 = 2 * c
-        Z_1 = 1
-    fc = c / (np.pi * d)
+    omega_0 = 2 * c / d
 
     # location of source and receivers
-    x_source = int(n_PML + n_d / 2)
-    y_source = int(n_PML + n_d / 2)
+    r_source = np.sqrt(2) * d
+    phi_source = 5 * np.pi / 4
+    x_source = x_edge + int(r_source / dx * np.cos(phi_source + theta))
+    y_source = y_edge + int(r_source / dx * np.sin(phi_source + theta))
 
-    x_recorder_1 = int(n_PML + 3 / 2 * n_d)
-    y_recorder_1 = int(n_PML + 2 * n_d)  # location receiver 1
+    if x_source - n_d / 2 < n_PML:
+        x_edge = n_PML + 2 * n_d
+        x_source = x_edge + int(r_source / dx * np.cos(phi_source + theta))
+    if y_source - n_d / 2 < n_PML:
+        y_edge = n_PML + 2 * n_d
+        y_source = y_edge + int(r_source / dx * np.sin(phi_source + theta))
 
-    x_recorder_2 = x_recorder_1 + n_d
-    y_recorder_2 = y_recorder_1  # location receiver 2
+    r_1 = d / 2
+    phi_1 = np.pi / 2
+    x_recorder_1 = x_edge + int(r_1 / dx * np.cos(phi_1 + theta))
+    y_recorder_1 = y_edge + int(r_1 / dx * np.sin(phi_1 + theta))  # location receiver 1
 
-    x_recorder_3 = x_recorder_1 + 2 * n_d
-    y_recorder_3 = y_recorder_1  # location receiver 3
+    r_2 = np.sqrt(5) * d / 2
+    phi_2 = np.arctan(1 / 2)
+    x_recorder_2 = x_edge + int(r_2 / dx * np.cos(phi_2 + theta))
+    y_recorder_2 = y_edge + int(r_2 / dx * np.sin(phi_2 + theta))  # location receiver 2
+
+    r_3 = np.sqrt(17) * d / 2
+    phi_3 = np.arctan(1 / 4)
+    x_recorder_3 = x_edge + int(r_3 / dx * np.cos(phi_3 + theta))
+    y_recorder_3 = y_edge + int(r_3 / dx * np.sin(phi_3 + theta))  # location receiver 3
 
     # initialisation of o and p fields
-    length = 4 * n_d + 2 * n_PML
-    height = n_edge + n_d + n_PML
+    length = int(np.max((x_recorder_3 + n_d / 2 + n_PML, x_source + n_d / 2 + n_PML)))
+    height = int(np.max((y_recorder_3 + n_d / 2 + n_PML, x_source + n_d / 2 + n_PML)))
     p = np.zeros((height, length))
     px = np.zeros_like(p)
     py = np.zeros_like(p)
     ox = np.zeros((height, length + 1))
     oy = np.zeros((height + 1, length))
+    p_domain = np.zeros_like(p)
+
+    for j in range(height):
+        for i in range(length):
+            if i < x_edge:
+                p_domain[j, i] = 1
+            elif j >= y_edge + (i - x_edge) * np.tan(theta):
+                p_domain[j, i] = 1
+            elif j <= y_edge + (i - x_edge) * np.tan(theta - np.pi / 2):
+                p_domain[j, i] = 1
+    """fig, ax = plt.subplots()
+    plt.axis("equal")
+    plt.imshow(p_domain, origin="lower")
+    ax.plot(x_source, y_source, "ks", fillstyle="none", label="Source")[0],
+    ax.plot(
+        x_recorder_1,
+        y_recorder_1,
+        "ro",
+        fillstyle="none",
+        label="Recorders",
+    )[0],
+    ax.plot(x_recorder_2, y_recorder_2, "ro", fillstyle="none")[0],
+    ax.plot(x_recorder_3, y_recorder_3, "ro", fillstyle="none")[0],
+    ax.plot(
+        [n_PML, length - n_PML, length - n_PML, n_PML, n_PML],
+        [n_PML, n_PML, height - n_PML, height - n_PML, n_PML],
+        "w:",
+        label="PML border",
+    )[0],
+    ax.legend()
+    plt.show()"""
 
     kappa_max = kappa_max_factor / dt
 
@@ -79,13 +119,13 @@ def FDTD(
         kappa_px[:, i] = np.full(
             height, kappa(d=(n_PML - i) * dx, kappa_max=kappa_max, d_PML=dx * n_PML)
         )
-        kappa_px[:, -i] = np.full(
+        kappa_px[:, -(i + 1)] = np.full(
             height, kappa(d=(n_PML - i) * dx, kappa_max=kappa_max, d_PML=dx * n_PML)
         )
         kappa_py[i] = np.full(
             length, kappa(d=(n_PML - i) * dx, kappa_max=kappa_max, d_PML=dx * n_PML)
         )
-        kappa_py[-i] = np.full(
+        kappa_py[-(i + 1)] = np.full(
             length, kappa(d=(n_PML - i) * dx, kappa_max=kappa_max, d_PML=dx * n_PML)
         )
     kappa_ox[:, :n_PML] = kappa_px[:, :n_PML]
@@ -143,16 +183,15 @@ def FDTD(
 
     # initialisation time series receivers
     recorder_1 = np.zeros((n_t, 1))
-    recorder_1_ref = np.zeros_like(recorder_1)
+
     recorder_2 = np.zeros_like(recorder_1)
-    recorder_2_ref = np.zeros_like(recorder_2)
+
     recorder_3 = np.zeros_like(recorder_1)
-    recorder_3_ref = np.zeros_like(recorder_3)
+
     source_recorder = np.zeros_like(recorder_1)
-    source_recorder_ref = np.zeros_like(source_recorder)
 
     timesteps = np.linspace(0, n_t * dt, n_t)
-    source_vals = source(timesteps, A=A, fc=fc, t0=t0, sigma=sigma)
+    source_vals = source(timesteps, A=A, omega_0=omega_0, t_0=t_0, sigma=sigma)
     update_source_vals = np.append(source_vals, 0.0)
 
     # TIME ITTERATION----------------------------------------------------
@@ -160,90 +199,59 @@ def FDTD(
     plt.axis("equal")
     movie = []
     for i in range(0, n_t):
-        t = (i - 1) * dt
-        timesteps[i] = t
         print("%d/%d" % (i + 1, n_t), end="\r")
 
         # propagate over one time step
 
         # adding source term to propagation
-        px[y_source, x_source] += source_vals[i]
-        # lower side
-        px[:n_edge, :n_edge] = (
-            dt
+        px[y_source, x_source] += source_vals[i] / 2
+        py[y_source, x_source] += source_vals[i] / 2
+
+        # store p field at receiver locations
+        recorder_1[i] = p[y_recorder_1, x_recorder_1]
+        recorder_2[i] = p[y_recorder_2, x_recorder_2]
+        recorder_3[i] = p[y_recorder_3, x_recorder_3]
+        source_recorder[i] = p[y_source, x_source]
+
+        # p fields
+        px = (
+            p_domain
+            * dt
             / dx
             * c**2
-            / (1 + kappa_px[:n_edge, :n_edge] * dt / 2)
-            * (ox[:n_edge, :n_edge] - ox[:n_edge, 1 : n_edge + 1])
-        ) + px[:n_edge, :n_edge] * (1 - kappa_px[:n_edge, :n_edge] * dt / 2) / (
-            1 + kappa_px[:n_edge, :n_edge] * dt / 2
-        )
-        py[:n_edge, :n_edge] = (
-            dt
+            / (1 + kappa_px * dt / 2)
+            * (ox[:, :-1] - ox[:, 1:])
+        ) + px * (1 - kappa_px * dt / 2) / (1 + kappa_px * dt / 2)
+        py = (
+            p_domain
+            * dt
             / dy
             * c**2
-            / (1 + kappa_py[:n_edge, :n_edge] * dt / 2)
-            * (oy[:n_edge, :n_edge] - oy[1 : n_edge + 1, :n_edge])
-        ) + py[:n_edge, :n_edge] * (1 - kappa_py[:n_edge, :n_edge] * dt / 2) / (
-            1 + kappa_py[:n_edge, :n_edge] * dt / 2
-        )
-        # upper side
-        px[n_edge:, :] = (
-            dt
-            / dx
-            / (1 + kappa_px[n_edge:, :] * dt / 2)
-            * c**2
-            * (ox[n_edge:, :-1] - ox[n_edge:, 1:])
-        ) + px[n_edge:, :] * (1 - kappa_px[n_edge:, :] * dt / 2) / (
-            1 + kappa_px[n_edge:, :] * dt / 2
-        )
-        py[n_edge:, :] = (
-            dt
-            / dy
-            / (1 + kappa_py[n_edge:, :] * dt / 2)
-            * c**2
-            * (oy[n_edge:-1, :] - oy[n_edge + 1 :, :])
-        ) + py[n_edge:, :] * (1 - kappa_py[n_edge:, :] * dt / 2) / (
-            1 + kappa_py[n_edge:, :] * dt / 2
-        )
+            / (1 + kappa_py * dt / 2)
+            * (oy[:-1, :] - oy[1:, :])
+        ) + py * (1 - kappa_py * dt / 2) / (1 + kappa_py * dt / 2)
 
         # combine px and py for easy acces to update o fields
         p = px + py
 
-        # lower side
-        ox[:n_edge, 1:n_edge] = (
-            dt
+        # o fields
+        ox[:, 1:-1] = (
+            p_domain[:, :-1]
+            * dt
             / dx
-            / (1 + kappa_ox[:n_edge, 1:n_edge] * dt / 2)
-            * (p[:n_edge, : n_edge - 1] - p[:n_edge, 1:n_edge])
-        ) + ox[:n_edge, 1:n_edge] * (1 - kappa_ox[:n_edge, 1:n_edge] * dt / 2) / (
-            1 + kappa_ox[:n_edge, 1:n_edge] * dt / 2
+            / (1 + kappa_ox[:, 1:-1] * dt / 2)
+            * (p[:, :-1] - p[:, 1:])
+        ) + ox[:, 1:-1] * (1 - kappa_ox[:, 1:-1] * dt / 2) / (
+            1 + kappa_ox[:, 1:-1] * dt / 2
         )
-        oy[1:n_edge, :n_edge] = (
-            dt
+        oy[1:-1, :] = (
+            p_domain[:-1, :]
+            * dt
             / dy
-            / (1 + kappa_oy[1:n_edge, :n_edge] * dt / 2)
-            * (p[: n_edge - 1, :n_edge] - p[1:n_edge, :n_edge])
-        ) + oy[1:n_edge, :n_edge] * (1 - kappa_oy[1:n_edge, :n_edge] * dt / 2) / (
-            1 + kappa_oy[1:n_edge, :n_edge] * dt / 2
-        )
-
-        # upper side
-        ox[n_edge:, 1:-1] = (
-            dt
-            / dx
-            / (1 + kappa_ox[n_edge:, 1:-1] * dt / 2)
-            * (p[n_edge:, :-1] - p[n_edge:, 1:])
-        ) + ox[n_edge:, 1:-1] * (1 - kappa_ox[n_edge:, 1:-1] * dt / 2) / (
-            1 + kappa_ox[n_edge:, 1:-1] * dt / 2
-        )
-        oy[n_edge:-1, :] = (
-            dt
-            / dy
-            / (1 + kappa_oy[n_edge:-1, :] * dt / 2)
-            * (p[n_edge - 1 : -1, :] - p[n_edge:, :])
-        ) + oy[n_edge:-1, :] * (1 - kappa_oy[n_edge:-1, :] * dt / 2) / (
-            1 + kappa_oy[n_edge:-1, :] * dt / 2
+            / (1 + kappa_oy[1:-1, :] * dt / 2)
+            * (p[:-1, :] - p[1:, :])
+        ) + oy[1:-1, :] * (1 - kappa_oy[1:-1, :] * dt / 2) / (
+            1 + kappa_oy[1:-1, :] * dt / 2
         )
 
         # edges 'behind' PML
@@ -252,15 +260,15 @@ def FDTD(
             - 2 * dt / dx * p[:, :1]
         ) / (1 + kappa_ox[:, :1] * dt / 2 + dt / dx * Z_r)
 
-        ox[n_edge:, -1:] = (
-            (1 - kappa_ox[n_edge:, -1:] * dt / 2 - Z_r * dt / dx) * ox[n_edge:, -1:]
-            + 2 * dt / dx * p[n_edge:, -1:]
-        ) / (1 + kappa_ox[n_edge:, -1:] * dt / 2 + dt / dx * Z_r)
+        ox[:, -1:] = (
+            (1 - kappa_ox[:, -1:] * dt / 2 - Z_r * dt / dx) * ox[:, -1:]
+            + 2 * dt / dx * p[:, -1:]
+        ) / (1 + kappa_ox[:, -1:] * dt / 2 + dt / dx * Z_r)
 
-        oy[:1, :n_edge] = (
-            (1 - kappa_oy[:1, :n_edge] * dt / 2 - Z_r * dt / dy) * oy[:1, :n_edge]
-            - 2 * dt / dy * p[:1, :n_edge]
-        ) / (1 + kappa_oy[:1, :n_edge] * dt / 2 + dt / dy * Z_r)
+        oy[:1, :] = (
+            (1 - kappa_oy[:1, :] * dt / 2 - Z_r * dt / dy) * oy[:1, :]
+            - 2 * dt / dy * p[:1, :]
+        ) / (1 + kappa_oy[:1, :] * dt / 2 + dt / dy * Z_r)
 
         oy[-1:, :] = (
             (1 - kappa_oy[-1:, :] * dt / 2 - Z_r * dt / dy) * oy[-1:, :]
@@ -268,33 +276,8 @@ def FDTD(
         ) / (1 + kappa_oy[-1:, :] * dt / 2 + dt / dy * Z_r)
 
         # edges of wedge
-        ox[:n_edge, n_edge : n_edge + 1] = (1 - Z_0 * dt / dx + 2 * Z_1 / dx) / (
-            1 + Z_0 * dt / dx + 2 * Z_1 / dx
-        ) * ox[:n_edge, n_edge : n_edge + 1] + 2 * dt / dx / (
-            1 + Z_0 * dt / dx + 2 * Z_1 / dx
-        ) * p[
-            :n_edge, n_edge - 1 : n_edge
-        ]
+        # do not need updating since they will remain zero for the given boundary conditions
 
-        oy[n_edge - 1 : n_edge, n_edge:] = (1 - Z_0 * dt / dy + 2 * Z_1 / dy) / (
-            1 + Z_0 * dt / dy + 2 * Z_1 / dy
-        ) * oy[n_edge - 1 : n_edge, n_edge:] + 2 * dt / dy / (
-            1 + Z_0 * dt / dy + 2 * Z_1 / dy
-        ) * p[
-            n_edge : n_edge + 1, n_edge:
-        ]
-        # adding source term to propagation for plotting
-        p[y_source, x_source] = update_source_vals[i + 1]
-
-        # store p field at receiver locations
-        recorder_1[i] = p[y_recorder_1, x_recorder_1]
-        recorder_1_ref[i] = p[y_recorder_1 + 1, x_recorder_1 + 1]
-        recorder_2[i] = p[y_recorder_2, x_recorder_2]
-        recorder_2_ref[i] = p[y_recorder_2 + 1, x_recorder_2 + 1]
-        recorder_3[i] = p[y_recorder_3, x_recorder_3]
-        recorder_3_ref[i] = p[y_recorder_3 + 1, x_recorder_3 + 1]
-        source_recorder[i] = p[y_source, x_source]
-        source_recorder_ref[i] = p[y_source + 1, x_source + 1]
         # presenting the p field
         plot_factor_A = 0.001 * A
         if make_movie == True:
@@ -323,11 +306,8 @@ def FDTD(
                 ax.plot(x_recorder_2, y_recorder_2, "ro", fillstyle="none")[0],
                 ax.plot(x_recorder_3, y_recorder_3, "ro", fillstyle="none")[0],
                 ax.plot(
-                    [n_edge, n_edge, length], [0, n_edge, n_edge], "k-", label="Wedge"
-                )[0],
-                ax.plot(
-                    [n_edge, n_PML, n_PML, length - n_PML, length - n_PML],
-                    [n_PML, n_PML, height - n_PML, height - n_PML, n_edge],
+                    [n_PML, length - n_PML, length - n_PML, n_PML, n_PML],
+                    [n_PML, n_PML, height - n_PML, height - n_PML, n_PML],
                     "w:",
                     label="PML border",
                 )[0],
@@ -356,7 +336,7 @@ def FDTD(
     plt.close()
     plt.plot(
         timesteps,
-        source(t=timesteps, A=A, fc=fc, t0=t0, sigma=sigma),
+        source(t=timesteps, A=A, omega_0=omega_0, t_0=t_0, sigma=sigma),
         "b-",
         label="Original source",
     )
@@ -368,33 +348,13 @@ def FDTD(
     if show_plots == True:
         plt.show()
     plt.close()
-    n_of_samples = 8192
 
-    post_Afout_Pfout(dx,dy,c,dt,d,(x_recorder_1+1)*dx,x_recorder_1*dx,(y_recorder_1+1)*dy,y_recorder_1*dy,recorder_1,recorder_1_ref,n_of_samples,timesteps,fc)
     if execute_post_processing == True:
-        
-        post_processing(
-            dx,
-            dy,
-            c,
-            dt,
-            source_recorder,
-            source_recorder_ref,
-            n_of_samples,
-            timesteps,
-            fc,
-        )
-        post_processing(
-            dx, dy, c, dt, recorder_1, recorder_1_ref, n_of_samples, timesteps, fc
-        )
-        post_processing(
-            dx, dy, c, dt, recorder_2, recorder_2_ref, n_of_samples, timesteps, fc
-        )
-        post_processing(
-            dx, dy, c, dt, recorder_3, recorder_3_ref, n_of_samples, timesteps, fc
-        )
 
-    return_array = np.zeros_like(p)
-    return_array[n_PML:n_edge, n_PML:n_edge] = p[n_PML:n_edge, n_PML:n_edge]
-    return_array[n_edge:-n_PML, n_PML:-n_PML] = p[n_edge:-n_PML, n_PML:-n_PML]
-    return np.abs(return_array) * dx**2
+        # NAVERWERKING : BEREKENING FASEFOUT en AMPLITUDEFOUT---------------------------------
+        # POST PROCESSING : CALCULATE PHASE and AMPLITUDE ERROR-------------------------------
+
+        post_processing(dt=dt,timesteps=timesteps,c=c,d=d,recorder1=recorder_1,recorder2=recorder_2,recorder3=recorder_3,comparison="main.npz",name="tilted")
+
+
+FDTD(show_plots=False, make_movie=False, execute_post_processing=True)

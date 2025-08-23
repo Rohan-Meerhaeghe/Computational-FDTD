@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from tools import post_Afout_Pfout
+from tools import post_processing
 
 from matplotlib.animation import ArtistAnimation
 
@@ -541,7 +541,7 @@ FDTD(n_d=75, make_movie=True, plot_kappa=True)
     # POST PROCESSING : CALCULATE PHASE and AMPLITUDE ERROR-------------------------------
     n_of_samples = 8192
 
-    post_Afout_Pfout(
+    post_processing(
         dx,
         dy,
         c,
@@ -558,7 +558,7 @@ FDTD(n_d=75, make_movie=True, plot_kappa=True)
         tijdreeks,
         fc,
     )
-    post_Afout_Pfout(
+    post_processing(
         dx,
         dy,
         c,

@@ -84,11 +84,12 @@ def post_processing(
     t_0,
     omega_0,
     source_recorder,
+    string,
 ):
-    n_of_samples = timesteps.size
+    n_of_samples = timesteps.size * 10
     # generate frequency axes
-    fftrecorder = fft(recorder.flatten(), n_of_samples)*dt
-    fftsource = fft(source_recorder.flatten(), n_of_samples)*dt
+    fftrecorder = fft(recorder.flatten(), n_of_samples) * dt
+    fftsource = fft(source_recorder.flatten(), n_of_samples) * dt
     freqs = fftfreq(n_of_samples, dt)
     fftrecorder = fftshift(fftrecorder)
     freqs = fftshift(freqs)
@@ -97,7 +98,7 @@ def post_processing(
 
     relevant_omegas = np.linspace(0.1 * c / d, 4 * c / d, 50)
     analytical = np.zeros_like(relevant_omegas).astype(complex)
-    
+
     for i in range(len(analytical)):
         analytical[i] = analytical_sol(
             omega=relevant_omegas[i],
@@ -111,18 +112,33 @@ def post_processing(
             omega_0=omega_0,
         )
 
-    open_space_rec = 1j * np.pi * hankel1(0, r * omegas / c)
-    open_space_theo = 1j * np.pi * hankel1(0, r * relevant_omegas / c)
+    # Define band of interest (e.g., 40–250 Hz)
+    omega_min = 0.1 * c / d
+    omega_max = 4 * c / d
+    mask = (omegas >= omega_min) & (omegas <= omega_max)
 
-    plt.plot(omegas, np.abs(fftsource), color="magenta", label="Source")
-    plt.plot(relevant_omegas,source_freq(relevant_omegas,1,sigma,t_0,omega_0), color='cyan',label='Analytical')
+    # Clip out useful part
+    omegas_band = omegas[mask]
+    fftrecorder_band = fftrecorder[mask]
+
+    np.savez("main_" + str(string) + ".npz", arr1=omegas_band, arr2=fftrecorder_band,arr3=timesteps,arr4=recorder)
+
+    plt.plot(omegas_band, np.abs(fftrecorder_band), color="magenta", label="FFT")
+    plt.plot(
+        relevant_omegas,
+        np.abs(analytical),
+        color="cyan",
+        label="Analytical",
+    )
     plt.legend()
     plt.xlabel(r"$\omega$ [Hz]")
     plt.ylabel(r"$|S(\omega)|$")
-    plt.xlim(0.1 * c / d, 4 * c / d)
-    plt.show()
+    # plt.show()
+    plt.close()
 
     # analytical amplitude ratio and phase difference
+    open_space_rec = 1j * np.pi * hankel1(0, r * omegas_band / c)
+    open_space_theo = 1j * np.pi * hankel1(0, r * relevant_omegas / c)
 
     Averhouding_theorie = np.abs(analytical) / np.abs(open_space_theo)
 
@@ -131,69 +147,70 @@ def post_processing(
     )
 
     # amplitude ratio and phase difference from FDTD
-    Averhouding_FDTD = np.abs(fftrecorder / open_space_rec)
+    Averhouding_FDTD = np.abs(fftrecorder_band / open_space_rec)
 
-    Pverschil_FDTD = np.unwrap(np.angle(fftrecorder)) - np.unwrap(
+    Pverschil_FDTD = np.unwrap(np.angle(fftrecorder_band)) - np.unwrap(
         np.angle(open_space_rec)
     )
-    omega_min = 0.1 * c / d
-    omega_max = 4 * c / d
 
-    plt.subplots()
-    plt.subplot(1, 3, 1)
-    plt.plot(timesteps, recorder, color="blue")
+    plt.subplots(constrained_layout=True)
+    plt.subplot(2, 3, 1)
+    plt.plot(timesteps, recorder)
     plt.title("Time recorder")
-    plt.subplot(1, 3, 2)
-    plt.plot(omegas, np.abs(fftrecorder), color="blue", label="FDTD")
-    plt.plot(relevant_omegas, np.abs(analytical), color="orange", label="Analytical")
+    plt.subplot(2, 3, 2)
+    plt.plot(omegas_band, np.abs(fftrecorder_band))
     plt.xlim(omega_min, omega_max)
     plt.xlabel(r"$\omega$ [Hz]")
     plt.ylabel("Amplitude FFT")
-    plt.legend()
     plt.title("Amplitude")
-    plt.subplot(1, 3, 3)
-    plt.plot(omegas, np.unwrap(np.angle(fftrecorder)), color="blue", label="FDTD")
-    plt.plot(
-        relevant_omegas,
-        np.unwrap(np.angle(analytical)),
-        color="orange",
-        label="Analytical",
-    )
+    plt.subplot(2, 3, 5)
+    plt.plot(relevant_omegas, np.abs(analytical), color="orange")
+    plt.xlim(omega_min, omega_max)
+    plt.xlabel(r"$\omega$ [Hz]")
+    plt.ylabel("Amplitude analytical")
+    plt.subplot(2, 3, 3)
+    plt.plot(omegas_band, np.angle(fftrecorder_band))
     plt.xlim(omega_min, omega_max)
     plt.xlabel(r"$\omega$ [Hz]")
     plt.ylabel("Phase [radians]")
-    plt.legend()
     plt.title("Phase FFT")
-    plt.savefig("p_field.png")
-    plt.show()
+    plt.subplot(2, 3, 6)
+    plt.plot(relevant_omegas, np.unwrap(np.angle(analytical)), color="orange")
+    plt.xlim(omega_min, omega_max)
+    plt.xlabel(r"$\omega$ [Hz]")
+    plt.ylabel("Phase analytical [radians]")
+    plt.savefig("FFT_" + str(string) + ".png")
+    # plt.tight_layout()
+    # plt.show()
     plt.close()
 
     # vergelijking analytisch-FDTD - comparison analytical versus FDTD
 
-    Averhouding = Averhouding_FDTD / Averhouding_theorie
-
-    print("Averhouding_FDTD")
-    print(Averhouding_FDTD.shape)
-    print("Averhouding_theorie")
-    print(Averhouding_theorie.shape)
-    print("omegas")
-    print(omegas.shape)
-    print("Averhouding")
-    print(Averhouding.shape)
-    plt.subplots()
-    plt.subplot(2, 1, 1)
-    plt.plot(omegas, Averhouding)
-    plt.title("Amplitude ratio FDTD/analyt")
-    plt.ylabel("ratio")
+    plt.subplots(constrained_layout=True)
+    plt.subplot(2, 2, 1)
+    plt.plot(omegas_band, Averhouding_FDTD)
+    plt.title("Amplitude ratio")
+    plt.ylabel("Ratio FDTD")
     plt.xlabel(r"$\omega$")
-
-    # Pdifference = np.unwrap((Pverschil_FDTD+Pverschil_theorie)/aantalcellengepropageerd)
-    Pdifference = Pverschil_FDTD - Pverschil_theorie
-
-    plt.subplot(2, 1, 2)
-    plt.plot(omegas, Pdifference)
-    plt.title("Phase difference FDTD")
-    plt.ylabel("Phase difference")
+    plt.xlim(omega_min, omega_max)
+    plt.subplot(2, 2, 3)
+    plt.plot(relevant_omegas, Averhouding_theorie)
+    plt.ylabel("Ratio analytical")
     plt.xlabel(r"$\omega$")
+    plt.xlim(omega_min, omega_max)
+
+    plt.subplot(2, 2, 2)
+    plt.plot(omegas_band, Pverschil_FDTD)
+    plt.title("Phase difference")
+    plt.ylabel("Phase difference FDTD")
+    plt.xlabel(r"$\omega$")
+    plt.xlim(omega_min, omega_max)
+    plt.subplot(2, 2, 4)
+    plt.plot(relevant_omegas, Pverschil_theorie)
+    plt.ylabel("Phase difference analytical")
+    plt.xlabel(r"$\omega$")
+    plt.xlim(omega_min, omega_max)
+    plt.savefig("FFT_comp_" + str(string) + ".png")
+    # plt.tight_layout()
     # plt.show()
     plt.close()

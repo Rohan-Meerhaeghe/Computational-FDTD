@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from tools import post_processing
+from tools_reactive import post_processing
 
 from matplotlib.animation import ArtistAnimation
 
@@ -36,6 +36,8 @@ def FDTD(
     dt = CFL / (c * np.sqrt((1 / dx**2) + (1 / dy**2)))  # time step
     n_t = int(T / dt)
     Z_r = c
+    Z_0 = 2 * c
+    Z_1 = 1
     omega_0 = 2 * c / d
 
     # location of source and receivers
@@ -265,7 +267,21 @@ def FDTD(
         ) / (1 + kappa_oy[-1:, :] * dt / 2 + dt / dy * Z_r)
 
         # edges of wedge
-        # do not need updating since they will remain zero for the given boundary conditions
+        ox[:n_edge, n_edge : n_edge + 1] = (1 - Z_0 * dt / dx + 2 * Z_1 / dx) / (
+            1 + Z_0 * dt / dx + 2 * Z_1 / dx
+        ) * ox[:n_edge, n_edge : n_edge + 1] + 2 * dt / dx / (
+            1 + Z_0 * dt / dx + 2 * Z_1 / dx
+        ) * p[
+            :n_edge, n_edge - 1 : n_edge
+        ]
+
+        oy[n_edge - 1 : n_edge, n_edge:] = (1 - Z_0 * dt / dy + 2 * Z_1 / dy) / (
+            1 + Z_0 * dt / dy + 2 * Z_1 / dy
+        ) * oy[n_edge - 1 : n_edge, n_edge:] + 2 * dt / dy / (
+            1 + Z_0 * dt / dy + 2 * Z_1 / dy
+        ) * p[
+            n_edge : n_edge + 1, n_edge:
+        ]
 
         # presenting the p field
         plot_factor_A = 0.001 * A
@@ -359,7 +375,6 @@ def FDTD(
             sigma=sigma,
             t_0=t_0,
             omega_0=omega_0,
-            source_recorder=source_recorder,
             string="recorder_1"
         )
         post_processing(
@@ -375,7 +390,6 @@ def FDTD(
             sigma=sigma,
             t_0=t_0,
             omega_0=omega_0,
-            source_recorder=source_recorder,
             string="recorder_2"
         )
         post_processing(
@@ -391,7 +405,6 @@ def FDTD(
             sigma=sigma,
             t_0=t_0,
             omega_0=omega_0,
-            source_recorder=source_recorder,
             string="recorder_3"
         )
 

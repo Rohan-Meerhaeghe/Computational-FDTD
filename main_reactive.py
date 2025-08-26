@@ -87,54 +87,6 @@ def FDTD(
     kappa_oy[:n_PML, :] = kappa_py[:n_PML, :]
     kappa_oy[-n_PML:, :] = kappa_py[-n_PML:, :]
 
-    if plot_kappa == True:
-        kappa_vals = np.fromiter(
-            (
-                kappa(d=i * dx, d_PML=dx * n_PML, kappa_max=kappa_max)
-                for i in range(n_PML)
-            ),
-            dtype=float,
-        )
-        kappa_same_vals = np.fromiter(
-            (
-                (1 - kappa(d=i * dx, d_PML=dx * n_PML, kappa_max=kappa_max) * dt / 2)
-                / (1 + kappa(d=i * dx, d_PML=dx * n_PML, kappa_max=kappa_max) * dt / 2)
-                for i in range(n_PML)
-            ),
-            dtype=float,
-        )
-        kappa_diff_vals = np.fromiter(
-            (
-                1
-                / (1 + kappa(d=i * dx, d_PML=dx * n_PML, kappa_max=kappa_max) * dt / 2)
-                for i in range(n_PML)
-            ),
-            dtype=float,
-        )
-
-        fig, ax1 = plt.subplots()
-
-        ax1.set_xlabel("cell index")
-        ax1.set_ylabel(r"$\kappa$", color="red")
-        ax1.plot(kappa_vals, color="red")
-        ax1.tick_params(axis="y", labelcolor="red")
-
-        ax2 = ax1.twinx()
-        ax2.set_ylabel("Damping factor", color="blue")
-        ax2.plot(
-            kappa_same_vals,
-            color="blue",
-            label=r"$\frac{1-\kappa dt/2}{1+\kappa dt/2}$",
-        )
-        ax2.plot(kappa_diff_vals, color="cyan", label=r"$\frac{1}{1+\kappa dt/2}$")
-        ax2.tick_params(axis="y", labelcolor="blue")
-        plt.legend()
-        plt.show()
-        plt.close()
-
-    print("max same damping:", 1 - (1 - kappa_max * dt / 2) / (1 + kappa_max * dt / 2))
-    print("max diff damping: ", 1 - 1 / (1 + kappa_max * dt / 2))
-
     # initialisation time series receivers
     recorder_1 = np.zeros((n_t, 1))
 

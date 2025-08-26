@@ -346,7 +346,7 @@ def FDTD(
 
         # NAVERWERKING : BEREKENING FASEFOUT en AMPLITUDEFOUT---------------------------------
         # POST PROCESSING : CALCULATE PHASE and AMPLITUDE ERROR-------------------------------
-        
+        reactive_post(dt=dt,timesteps=timesteps,c=c,d=d,recorder1=recorder_1,recorder2=recorder_2,recorder3=recorder_3,comparison="None",name="h")
         post_processing(
             dt=dt,
             timesteps=timesteps,

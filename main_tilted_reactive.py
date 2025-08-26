@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from tools_reactive import post_processing
-from tools import post_processing as old_post_processing
 
 from matplotlib.animation import ArtistAnimation
 
@@ -99,8 +98,6 @@ def FDTD(
                 ox_domain[j, i] = 1
             if p_domain[j, i - 1] == 1 and p_domain[j, i] == 0:
                 ox_edge_domain[j, i] = 1
-            if p_domain[j, i - 1] == 0 and p_domain[j, i] == 1:
-                ox_edge_domain[j, i] = 1
     for j in range(1, height):
         for i in range(length):
             if p_domain[j - 1, i] == 1 and p_domain[j, i] == 1:
@@ -114,12 +111,9 @@ def FDTD(
     oy_domain[0, :] = p_domain[1, :]
     oy_domain[-1, :] = p_domain[-1, :]
 
-    ox_edge_domain_inv = np.abs(np.ones_like(ox) - ox_edge_domain)
-    oy_edge_domain_inv = np.abs(np.ones_like(oy) - oy_edge_domain)
-
-    """fig, ax = plt.subplots()
+    fig, ax = plt.subplots()
     plt.axis("equal")
-    plt.imshow(oy_edge_domain + oy_domain, origin="lower")
+    plt.imshow(oy_domain+oy_edge_domain, origin="lower")
     ax.plot(x_source, y_source, "ks", fillstyle="none", label="Source")[0],
     ax.plot(
         x_recorder_1,
@@ -137,7 +131,7 @@ def FDTD(
         label="PML border",
     )[0],
     ax.legend()
-    plt.show()"""
+    #plt.show()
 
     kappa_max = kappa_max_factor / dt
 
@@ -190,6 +184,12 @@ def FDTD(
         px[y_source, x_source] += source_vals[i] / 2
         py[y_source, x_source] += source_vals[i] / 2
 
+        # store p field at receiver locations
+        recorder_1[i] = p[y_recorder_1, x_recorder_1]
+        recorder_2[i] = p[y_recorder_2, x_recorder_2]
+        recorder_3[i] = p[y_recorder_3, x_recorder_3]
+        source_recorder[i] = p[y_source, x_source]
+
         # p fields
         px = (
             p_domain
@@ -213,22 +213,32 @@ def FDTD(
 
         # o fields
         ox[:, 1:-1] = (
-            ox_domain[:, 1:-1]
-            * dt
-            / dx
-            / (1 + kappa_ox[:, 1:-1] * dt / 2)
-            * (p[:, :-1] - p[:, 1:])
-        ) + ox[:, 1:-1] * (1 - kappa_ox[:, 1:-1] * dt / 2) / (
-            1 + kappa_ox[:, 1:-1] * dt / 2
+            (ox_domain[:, 1:-1] * dt / dx * (p[:, :-1] - p[:, 1:]))
+            + ox[:, 1:-1]
+            * (
+                1
+                - kappa_ox[:, 1:-1] * dt / 2
+                + (-Z_0 * dt / dx + 2 * Z_1 / dx) * ox_edge_domain[:, 1:-1]
+            )
+            + ox_edge_domain[:, 1:-1] * 2 * dt / dx * (p[:, :-1] - p[:, 1:])
+        ) / (
+            1
+            + kappa_ox[:, 1:-1] * dt / 2
+            + (Z_0 * dt / dx + 2 * Z_1 / dx) * ox_edge_domain[:, 1:-1]
         )
         oy[1:-1, :] = (
-            oy_domain[1:-1, :]
-            * dt
-            / dy
-            / (1 + kappa_oy[1:-1, :] * dt / 2)
-            * (p[:-1, :] - p[1:, :])
-        ) + oy[1:-1, :] * (1 - kappa_oy[1:-1, :] * dt / 2) / (
-            1 + kappa_oy[1:-1, :] * dt / 2
+            (oy_domain[1:-1, :] * dt / dy * (p[:-1, :] - p[1:, :]))
+            + oy[1:-1, :]
+            * (
+                1
+                - kappa_oy[1:-1, :] * dt / 2
+                + (-Z_0 * dt / dy + 2 * Z_1 / dy) * oy_edge_domain[1:-1, :]
+            )
+            + oy_edge_domain[1:-1, :] * 2 * dt / dy * (p[:-1, :] - p[1:, :])
+        ) / (
+            1
+            + kappa_oy[1:-1, :] * dt / 2
+            + (Z_0 * dt / dy + 2 * Z_1 / dy) * oy_edge_domain[1:-1, :]
         )
 
         # edges 'behind' PML
@@ -252,13 +262,7 @@ def FDTD(
             + 2 * dt / dy * p[-1:, :]
         ) / (1 + kappa_oy[-1:, :] * dt / 2 + dt / dy * Z_r)
 
-        # edges of wedge - do not need updating with perfectly reflecting BC, are automatically set to 0 by p_domain and o_domain
-
-        # store p field at receiver locations
-        recorder_1[i] = p[y_recorder_1, x_recorder_1]
-        recorder_2[i] = p[y_recorder_2, x_recorder_2]
-        recorder_3[i] = p[y_recorder_3, x_recorder_3]
-        source_recorder[i] = p[y_source, x_source]
+        # edges of wedge - do not need updating with perfectly reflecting BC, are automatically 0 by
 
         # presenting the p field
         plot_factor_A = 0.001 * A
@@ -344,13 +348,9 @@ def FDTD(
             recorder1=recorder_1,
             recorder2=recorder_2,
             recorder3=recorder_3,
-            comparison="main.npz",
-            name="fine_mesh",
+            comparison="main_reactive.npz",
+            name="tilted_reactive",
         )
 
 
-FDTD(
-    show_plots=False,
-    make_movie=False,
-    execute_post_processing=True,
-)
+FDTD(show_plots=False, make_movie=False, execute_post_processing=True,n_d=100)

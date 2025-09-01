@@ -345,7 +345,7 @@ def FDTD(
             recorder2=recorder_2,
             recorder3=recorder_3,
             comparison="main.npz",
-            name="fine_mesh",
+            name="tilted_coarse",
         )
 
 
@@ -353,4 +353,5 @@ FDTD(
     show_plots=False,
     make_movie=False,
     execute_post_processing=True,
+    n_d=25
 )
